@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# bd-service <app> <port> <start|stop|restart|status>
+# Controls one port-instance of an app set up by bd-app-setup (bd-<app>@<port>.service). The port
+# selects which instance, so the same app can have two independent instances (old + new release)
+# controlled separately during a blue/green release.
+#
+# Usage: bd-service <app> <port> <start|stop|restart|status>
+# On success: BD_RESULT {"ok":true,"app":"<app>","port":"<port>","action":"<action>","active":"true|false"}
+# On failure: BD_RESULT {"ok":false,"error":"<code>","message":"..."}
+#
+# @@LIB@@
+
+require_root
+
+APP="${1:-}"
+PORT="${2:-}"
+ACTION="${3:-}"
+
+if [ -z "$APP" ] || [ -z "$PORT" ] || [ -z "$ACTION" ]; then
+  die "Usage: bd-service <app> <port> <start|stop|restart|status>" "BD_BAD_ARGS"
+fi
+if ! validate_app "$APP"; then
+  die "Invalid app slug: ${APP}" "BD_INVALID_APP"
+fi
+if ! validate_port "$PORT"; then
+  die "Invalid port: ${PORT}" "BD_INVALID_PORT"
+fi
+
+UNIT="bd-${APP}@${PORT}.service"
+if [ ! -f "/etc/systemd/system/bd-${APP}@.service" ]; then
+  die "No systemd unit template found for app ${APP}; run bd-app-setup first." "BD_APP_NOT_FOUND"
+fi
+
+case "$ACTION" in
+  start | stop | restart)
+    if ! systemctl "$ACTION" "$UNIT" 2>/tmp/bd-service-err; then
+      ERR="$(cat /tmp/bd-service-err 2>/dev/null || true)"
+      rm -f /tmp/bd-service-err
+      die "systemctl ${ACTION} ${UNIT} failed: ${ERR}" "BD_SERVICE_ACTION_FAILED"
+    fi
+    rm -f /tmp/bd-service-err
+    if [ "$ACTION" = "start" ] || [ "$ACTION" = "restart" ]; then
+      systemctl enable "$UNIT" >/dev/null 2>&1 || true
+    fi
+    ;;
+  status) ;;
+  *)
+    die "Unsupported action: ${ACTION}. Supported: start, stop, restart, status." "BD_BAD_ARGS"
+    ;;
+esac
+
+ACTIVE="false"
+if systemctl is-active --quiet "$UNIT"; then
+  ACTIVE="true"
+fi
+
+result app "$APP" port "$PORT" action "$ACTION" active "$ACTIVE"

@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# bd-clean-disk
+# Frees disk space: apt autoremove/clean, vacuums the systemd journal down to 200 MB, and removes
+# app log files older than 14 days (Bob Deploy's own logs, never anything inside an app directory).
+#
+# Usage: bd-clean-disk
+# On success: BD_RESULT {"ok":true,"freedApproxMb":"<n>"}
+# On failure: BD_RESULT {"ok":false,"error":"<code>","message":"..."}
+#
+# @@LIB@@
+
+require_root
+export DEBIAN_FRONTEND=noninteractive
+
+BEFORE_KB="$(df -Pk / | awk 'NR==2 {print $4}')"
+
+apt-get autoremove -y -qq >/dev/null 2>&1 || true
+apt-get clean -qq >/dev/null 2>&1 || true
+journalctl --vacuum-size=200M >/dev/null 2>&1 || true
+
+if [ -d "$BD_LOG_DIR" ]; then
+  find "$BD_LOG_DIR" -maxdepth 1 -type f -name '*.log' -mtime +14 -exec truncate -s 0 {} \; 2>/dev/null || true
+fi
+
+AFTER_KB="$(df -Pk / | awk 'NR==2 {print $4}')"
+FREED_KB=$((AFTER_KB - BEFORE_KB))
+[ "$FREED_KB" -lt 0 ] && FREED_KB=0
+FREED_MB=$((FREED_KB / 1024))
+
+result freedApproxMb "$FREED_MB"

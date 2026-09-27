@@ -1,0 +1,3 @@
+bd-demo@web.service loaded active running Bob Deploy demo web process
+bd-demo@worker.service loaded failed failed Bob Deploy demo worker
+bd-demo@scheduler.service loaded activating auto-restart Bob Deploy demo scheduler

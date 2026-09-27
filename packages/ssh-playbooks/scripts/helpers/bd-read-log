@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# bd-read-log <app> <lines>
+# Reads the tail of an app's own log file (/var/log/bob-deploy/<app>.log), which is where its
+# systemd service's stdout/stderr are appended (see bd-app-setup's unit template).
+#
+# Usage: bd-read-log <app> <lines>
+# On success: BD_RESULT {"ok":true,"app":"<app>","content":"<base64 of the tail>"}
+# On failure: BD_RESULT {"ok":false,"error":"<code>","message":"..."}
+#
+# @@LIB@@
+
+require_root
+
+APP="${1:-}"
+LINES="${2:-200}"
+
+if [ -z "$APP" ]; then
+  die "Usage: bd-read-log <app> [lines]" "BD_BAD_ARGS"
+fi
+if ! validate_app "$APP"; then
+  die "Invalid app slug: ${APP}" "BD_INVALID_APP"
+fi
+if ! [[ "$LINES" =~ ^[0-9]+$ ]] || [ "$LINES" -lt 1 ] || [ "$LINES" -gt 10000 ]; then
+  die "lines must be an integer between 1 and 10000." "BD_BAD_ARGS"
+fi
+
+LOG_FILE="${BD_LOG_DIR}/${APP}.log"
+if [ ! -f "$LOG_FILE" ]; then
+  die "No log file found for app ${APP} at ${LOG_FILE}." "BD_APP_NOT_FOUND"
+fi
+
+CONTENT_B64="$(tail -n "$LINES" "$LOG_FILE" | base64 -w0)"
+result app "$APP" content "$CONTENT_B64"

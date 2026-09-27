@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="Bob Deploy app icon">
+  <defs>
+    <linearGradient id="background" x1="128" y1="896" x2="896" y2="128" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0b3328"/>
+      <stop offset="1" stop-color="#14785d"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="28" stdDeviation="32" flood-color="#051d17" flood-opacity=".3"/>
+    </filter>
+  </defs>
+  <rect x="52" y="52" width="920" height="920" rx="228" fill="url(#background)"/>
+  <path d="M306 240h250c134 0 216 65 216 169 0 61-31 111-89 140 76 26 116 83 116 161 0 119-91 194-237 194H306V240Zm230 247c61 0 96-29 96-76 0-45-35-72-96-72h-88v148h88Zm18 318c67 0 104-32 104-86 0-53-39-84-106-84H448v170h106Z" fill="#f3fff9" filter="url(#shadow)"/>
+  <path d="M716 132 858 274h-86v147H660V274h-86l142-142Z" fill="#67d6ad"/>
+</svg>

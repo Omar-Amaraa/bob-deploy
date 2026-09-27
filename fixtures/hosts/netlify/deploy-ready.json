@@ -1,0 +1,8 @@
+{
+  "id": "dpl-netlify-001",
+  "site_id": "3970e0fe-8564-4903-9a55-c5f8de49fb8b",
+  "state": "ready",
+  "url": "http://bob-demo.netlify.app",
+  "ssl_url": "https://bob-demo.netlify.app",
+  "deploy_ssl_url": "https://dpl-netlify-001--bob-demo.netlify.app"
+}

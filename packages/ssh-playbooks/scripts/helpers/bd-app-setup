@@ -1,0 +1,137 @@
+#!/usr/bin/env bash
+# bd-app-setup <app> <admin_user>
+# Creates (or updates) the on-disk layout and systemd unit template for one app, so it can run
+# releases side by side during a blue/green deploy (see release/release.ts):
+#
+#   /srv/bob-deploy/apps/<app>/          admin:bd-<app>, 2750 (setgid; group can read+traverse)
+#     releases/<release_id>/             one per release, extracted by the admin user (no sudo)
+#     run/<port>.release                 which release_id is currently bound to systemd instance <port>
+#     shared/.env                        the project's env vars, written fresh on every release
+#     current -> releases/<release_id>   atomic symlink to the live release (Caddy/static serving,
+#                                         and bookkeeping for "which release is live")
+#
+# The app's own process always runs as the unprivileged bd-<app> system user (never admin, never
+# root); admin owns the tree so the release procedure can create/upload/swap without sudo, and
+# bd-<app> is a member of the app's group so it can read (but not write) everything it needs.
+#
+# The systemd unit (bd-<app>@<port>.service) is instantiated *by port*, not by app name: two
+# instances (old + new release) can run at once, each one resolving which release to run from
+# run/<port>.release at start time (written by the release procedure just before starting it) and
+# execing that release's own releases/<id>/.bd-start script (written by the release procedure,
+# already validated against START_CMD_PATTERN before it ever reaches disk).
+#
+# Usage: bd-app-setup <app> <admin_user>
+# On success: BD_RESULT {"ok":true,"app":"<app>","appDir":"/srv/bob-deploy/apps/<app>"}
+# On failure: BD_RESULT {"ok":false,"error":"<code>","message":"..."}
+#
+# @@LIB@@
+
+require_root
+
+APP="${1:-}"
+ADMIN_USER="${2:-}"
+
+if [ -z "$APP" ] || [ -z "$ADMIN_USER" ]; then
+  die "Usage: bd-app-setup <app> <admin_user>" "BD_BAD_ARGS"
+fi
+if ! validate_app "$APP"; then
+  die "Invalid app slug: ${APP}" "BD_INVALID_APP"
+fi
+if ! validate_user "$ADMIN_USER"; then
+  die "Invalid admin user name: ${ADMIN_USER}" "BD_INVALID_USER"
+fi
+if ! id "$ADMIN_USER" >/dev/null 2>&1; then
+  die "User ${ADMIN_USER} does not exist; run 10-create-admin.sh first." "BD_USER_NOT_FOUND"
+fi
+
+APP_USER="bd-${APP}"
+# Linux user names are at most 32 characters; useradd only says "invalid user name".
+if [ "${#APP_USER}" -gt 32 ]; then
+  die "App name ${APP} is too long: the app user ${APP_USER} would exceed Linux's 32-character limit (use at most 29 characters)." "BD_INVALID_APP"
+fi
+APP_DIR="/srv/bob-deploy/apps/${APP}"
+
+if ! id "$APP_USER" >/dev/null 2>&1; then
+  useradd --system --home-dir "$APP_DIR" --no-create-home --shell /usr/sbin/nologin "$APP_USER" \
+    || die "Failed to create app user ${APP_USER}." "BD_USERADD_FAILED"
+fi
+
+usermod -aG "$APP_USER" "$ADMIN_USER" \
+  || die "Failed to add ${ADMIN_USER} to the ${APP_USER} group." "BD_USERADD_FAILED"
+
+mkdir -p "$APP_DIR" "${APP_DIR}/releases" "${APP_DIR}/run" "${APP_DIR}/shared"
+chown "${ADMIN_USER}:${APP_USER}" "$APP_DIR" "${APP_DIR}/releases" "${APP_DIR}/run" "${APP_DIR}/shared"
+chmod 2750 "$APP_DIR" "${APP_DIR}/releases" "${APP_DIR}/run" "${APP_DIR}/shared"
+
+# --- launch.sh template: resolves which release to run from run/<port>.release (the systemd
+# instance's own port, %i, is passed in as $PORT), sources the shared env file, then execs that
+# release's own .bd-start. Generic across every app; nothing app-specific is baked in here. ---
+LAUNCH_SCRIPT="${APP_DIR}/launch.sh"
+cat >"$LAUNCH_SCRIPT" <<EOF
+#!/usr/bin/env bash
+# Managed by Bob Deploy (bd-app-setup). Do not edit by hand.
+set -eo pipefail
+: "\${PORT:?PORT must be set by the systemd instance}"
+export HOST="\${HOST:-127.0.0.1}"
+APP_DIR="${APP_DIR}"
+RELEASE_FILE="\${APP_DIR}/run/\${PORT}.release"
+if [ ! -f "\$RELEASE_FILE" ]; then
+  echo "No release recorded for port \${PORT} (\${RELEASE_FILE} missing)." >&2
+  exit 1
+fi
+RELEASE_ID="\$(cat "\$RELEASE_FILE")"
+RELEASE_DIR="\${APP_DIR}/releases/\${RELEASE_ID}"
+if [ ! -d "\$RELEASE_DIR" ]; then
+  echo "Release directory not found: \${RELEASE_DIR}" >&2
+  exit 1
+fi
+cd "\$RELEASE_DIR"
+set -a
+# shellcheck disable=SC1091
+[ -f "\${APP_DIR}/shared/.env" ] && . "\${APP_DIR}/shared/.env"
+set +a
+exec bash "\${RELEASE_DIR}/.bd-start"
+EOF
+chown "${ADMIN_USER}:${APP_USER}" "$LAUNCH_SCRIPT"
+chmod 0750 "$LAUNCH_SCRIPT"
+
+# --- systemd unit template: instantiated per *port* as bd-<app>@<port>.service, so two instances
+# (old + new release) can run at once during a blue/green switch. ---
+UNIT_FILE="/etc/systemd/system/bd-${APP}@.service"
+cat >"$UNIT_FILE" <<EOF
+# Managed by Bob Deploy (bd-app-setup). Instance name is the port the process listens on
+# (bd-${APP}@<port>.service), so two instances can run at once during a release.
+[Unit]
+Description=Bob Deploy app: ${APP} (port %i)
+After=network.target
+
+[Service]
+Type=simple
+User=${APP_USER}
+Group=${APP_USER}
+Environment=PORT=%i
+Environment=HOST=127.0.0.1
+ExecStart=${APP_DIR}/launch.sh
+Restart=on-failure
+RestartSec=2
+StandardOutput=append:/var/log/bob-deploy/${APP}.log
+StandardError=append:/var/log/bob-deploy/${APP}.log
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=${APP_DIR}
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+EOF
+chmod 0644 "$UNIT_FILE"
+
+mkdir -p "$BD_LOG_DIR"
+touch "${BD_LOG_DIR}/${APP}.log"
+chown "${APP_USER}:${APP_USER}" "${BD_LOG_DIR}/${APP}.log"
+chmod 0640 "${BD_LOG_DIR}/${APP}.log"
+
+systemctl daemon-reload || die "systemctl daemon-reload failed after installing the unit template." "BD_SYSTEMD_RELOAD_FAILED"
+
+result app "$APP" appDir "$APP_DIR"

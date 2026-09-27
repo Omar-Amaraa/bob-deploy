@@ -1,0 +1,29 @@
+{
+  "name": "@bob-deploy/ssh-playbooks",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "generate": "node scripts-gen/build-scripts.mjs",
+    "prebuild": "node scripts-gen/build-scripts.mjs",
+    "build": "tsc -b tsconfig.json",
+    "test": "vitest run --project unit"
+  },
+  "dependencies": {
+    "@bob-deploy/agent": "workspace:*",
+    "@bob-deploy/contracts": "workspace:*",
+    "ssh2": "^1.16.0",
+    "tar": "^7.4.3"
+  },
+  "devDependencies": {
+    "@types/ssh2": "^1.15.1"
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "private": true,
+  "name": "bob-deploy",
+  "type": "module",
+  "packageManager": "pnpm@10.15.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -b packages/contracts/tsconfig.json packages/core/tsconfig.json packages/ssh-playbooks/tsconfig.json packages/agent/tsconfig.json packages/providers/tsconfig.json packages/monitors/tsconfig.json packages/ui/tsconfig.json packages/app-shell/tsconfig.json",
+    "typecheck": "tsc -b packages/contracts/tsconfig.json packages/core/tsconfig.json packages/ssh-playbooks/tsconfig.json packages/agent/tsconfig.json packages/providers/tsconfig.json packages/monitors/tsconfig.json packages/ui/tsconfig.json packages/app-shell/tsconfig.json --force",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "test": "vitest run --project unit --passWithNoTests",
+    "test:integration": "vitest run --project integration --passWithNoTests",
+    "test:failure": "vitest run --project failure --passWithNoTests"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.15.0",
+    "@types/node": "^22.10.0",
+    "eslint": "^9.15.0",
+    "prettier": "^3.4.1",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.16.0",
+    "vitest": "^2.1.8"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "name": "express-sample",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "build": "echo no-build-needed"
+  },
+  "dependencies": {
+    "express": "^4.19.0"
+  }
+}

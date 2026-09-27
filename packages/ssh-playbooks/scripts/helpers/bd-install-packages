@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# bd-install-packages <app> <manager>
+# Installs an already-uploaded app's dependencies inside /srv/bob-deploy/apps/<app>, using the
+# given package manager. Runs as the app's own system user (bd-<app>), never as root, so a
+# malicious postinstall script in the app's own dependency tree can't touch anything outside the
+# app's own directory.
+#
+# Usage: bd-install-packages <app> <npm|pnpm|yarn|pip|poetry>
+# On success: BD_RESULT {"ok":true,"app":"<app>","manager":"<manager>"}
+# On failure: BD_RESULT {"ok":false,"error":"<code>","message":"..."}
+#
+# @@LIB@@
+
+require_root
+
+APP="${1:-}"
+MANAGER="${2:-}"
+
+if [ -z "$APP" ] || [ -z "$MANAGER" ]; then
+  die "Usage: bd-install-packages <app> <npm|pnpm|yarn|pip|poetry>" "BD_BAD_ARGS"
+fi
+if ! validate_app "$APP"; then
+  die "Invalid app slug: ${APP}" "BD_INVALID_APP"
+fi
+
+APP_DIR="/srv/bob-deploy/apps/${APP}"
+APP_USER="bd-${APP}"
+
+if [ ! -d "$APP_DIR" ]; then
+  die "App directory ${APP_DIR} does not exist; run bd-app-setup first." "BD_APP_NOT_FOUND"
+fi
+if ! id "$APP_USER" >/dev/null 2>&1; then
+  die "App user ${APP_USER} does not exist; run bd-app-setup first." "BD_APP_NOT_FOUND"
+fi
+
+case "$MANAGER" in
+  npm)
+    CMD="npm ci --no-audit --no-fund || npm install --no-audit --no-fund"
+    ;;
+  pnpm)
+    CMD="corepack enable >/dev/null 2>&1; pnpm install --frozen-lockfile || pnpm install"
+    ;;
+  yarn)
+    CMD="corepack enable >/dev/null 2>&1; yarn install --frozen-lockfile || yarn install"
+    ;;
+  pip)
+    CMD="python3 -m venv .venv 2>/dev/null; . .venv/bin/activate; pip install --upgrade pip >/dev/null; pip install -r requirements.txt"
+    ;;
+  poetry)
+    CMD="python3 -m pip install --user poetry >/dev/null 2>&1; \$HOME/.local/bin/poetry install --no-interaction"
+    ;;
+  *)
+    die "Unsupported package manager: ${MANAGER}. Supported: npm, pnpm, yarn, pip, poetry." "BD_BAD_ARGS"
+    ;;
+esac
+
+LOG_FILE="/tmp/bd-install-packages-${APP}.log"
+if ! runuser -u "$APP_USER" -- bash -lc "cd '${APP_DIR}' && set -euo pipefail && ${CMD}" >"$LOG_FILE" 2>&1; then
+  TAIL="$(tail -c 4000 "$LOG_FILE" 2>/dev/null || true)"
+  rm -f "$LOG_FILE"
+  die "Dependency installation failed (${MANAGER}). Last output: ${TAIL}" "BD_INSTALL_FAILED"
+fi
+rm -f "$LOG_FILE"
+
+result app "$APP" manager "$MANAGER"

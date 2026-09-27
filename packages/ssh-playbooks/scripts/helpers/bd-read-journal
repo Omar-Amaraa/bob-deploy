@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# bd-read-journal <app> <port> <lines>
+# Reads the tail of the systemd journal for one port-instance of an app's service unit — useful
+# when the app crashed before it could write anything to its own log file.
+#
+# Usage: bd-read-journal <app> <port> [lines]
+# On success: BD_RESULT {"ok":true,"app":"<app>","port":"<port>","content":"<base64 of the tail>"}
+# On failure: BD_RESULT {"ok":false,"error":"<code>","message":"..."}
+#
+# @@LIB@@
+
+require_root
+
+APP="${1:-}"
+PORT="${2:-}"
+LINES="${3:-200}"
+
+if [ -z "$APP" ] || [ -z "$PORT" ]; then
+  die "Usage: bd-read-journal <app> <port> [lines]" "BD_BAD_ARGS"
+fi
+if ! validate_app "$APP"; then
+  die "Invalid app slug: ${APP}" "BD_INVALID_APP"
+fi
+if ! validate_port "$PORT"; then
+  die "Invalid port: ${PORT}" "BD_INVALID_PORT"
+fi
+if ! [[ "$LINES" =~ ^[0-9]+$ ]] || [ "$LINES" -lt 1 ] || [ "$LINES" -gt 10000 ]; then
+  die "lines must be an integer between 1 and 10000." "BD_BAD_ARGS"
+fi
+
+UNIT="bd-${APP}@${PORT}.service"
+if [ ! -f "/etc/systemd/system/bd-${APP}@.service" ]; then
+  die "No systemd unit template found for app ${APP}; run bd-app-setup first." "BD_APP_NOT_FOUND"
+fi
+
+CONTENT_B64="$(journalctl -u "$UNIT" -n "$LINES" --no-pager 2>/dev/null | base64 -w0)"
+result app "$APP" port "$PORT" content "$CONTENT_B64"

@@ -1,0 +1,41 @@
+{
+  "name": "@bob-deploy/app-shell",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/main/index.js",
+  "types": "./dist/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/types/index.d.ts",
+      "default": "./dist/main/index.js"
+    }
+  },
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build && tsc -p tsconfig.types.json",
+    "test": "vitest run --project unit --dir packages/app-shell/src",
+    "e2e": "pnpm build && playwright test -c playwright.config.ts",
+    "verify:packaged": "node scripts/verify-packaged.mjs",
+    "dist": "pnpm build && electron-builder --config electron-builder.yml"
+  },
+  "dependencies": {
+    "@bob-deploy/contracts": "workspace:*",
+    "@bob-deploy/core": "workspace:*",
+    "@bob-deploy/monitors": "workspace:*",
+    "@bob-deploy/providers": "workspace:*",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^4.2.0",
+    "@playwright/test": "^1.63.0",
+    "@types/node": "^22.10.0",
+    "axe-core": "^4.13.0",
+    "electron": "^44.4.5",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^5.0.0",
+    "typescript": "^5.7.2",
+    "vite": "^7.1.0",
+    "vitest": "^2.1.8"
+  }
+}

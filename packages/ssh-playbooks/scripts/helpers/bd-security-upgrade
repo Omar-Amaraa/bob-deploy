@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# bd-security-upgrade
+# Applies pending security updates only (via unattended-upgrade, installing it first if missing).
+# Never touches package versions outside the -security pocket, so it can't accidentally upgrade an
+# app's runtime out from under it.
+#
+# Usage: bd-security-upgrade
+# On success: BD_RESULT {"ok":true,"rebootRequired":"true|false"}
+# On failure: BD_RESULT {"ok":false,"error":"<code>","message":"..."}
+#
+# @@LIB@@
+
+require_root
+export DEBIAN_FRONTEND=noninteractive
+
+if ! command -v unattended-upgrade >/dev/null 2>&1; then
+  apt_run update -q || true
+  apt_install unattended-upgrades \
+    || die "Failed to install unattended-upgrades: $(apt_tail)" "BD_APT_INSTALL_FAILED"
+fi
+
+apt_run update -q || die "apt-get update failed: $(apt_tail)" "BD_APT_UPDATE_FAILED"
+
+if ! unattended-upgrade -d 2>/tmp/bd-security-upgrade-err; then
+  ERR="$(tail -c 4000 /tmp/bd-security-upgrade-err 2>/dev/null || true)"
+  rm -f /tmp/bd-security-upgrade-err
+  die "unattended-upgrade failed: ${ERR}" "BD_UPGRADE_FAILED"
+fi
+rm -f /tmp/bd-security-upgrade-err
+
+REBOOT_REQUIRED="false"
+if [ -f /var/run/reboot-required ]; then
+  REBOOT_REQUIRED="true"
+fi
+
+result rebootRequired "$REBOOT_REQUIRED"

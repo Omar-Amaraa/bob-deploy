@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist/tsc",
+    "rootDir": ".",
+    "lib": ["ES2022", "DOM"],
+    "types": ["node", "electron"]
+  },
+  "include": ["src/**/*.ts", "electron.vite.config.ts", "playwright.config.ts"],
+  "references": [
+    { "path": "../contracts/tsconfig.json" },
+    { "path": "../core/tsconfig.json" },
+    { "path": "../providers/tsconfig.json" },
+    { "path": "../monitors/tsconfig.json" }
+  ]
+}

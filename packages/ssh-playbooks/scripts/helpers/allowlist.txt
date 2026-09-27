@@ -1,0 +1,15 @@
+# Managed by Bob Deploy. One absolute path per line; consumed by 40-install-helpers.sh to lock
+# down file permissions and generate the admin user's scoped, passwordless sudoers entry. Do not
+# add anything here that isn't one of the fixed helper scripts in this directory.
+/usr/local/lib/bob-deploy/bin/bd-install-runtime
+/usr/local/lib/bob-deploy/bin/bd-install-packages
+/usr/local/lib/bob-deploy/bin/bd-install-apt-packages
+/usr/local/lib/bob-deploy/bin/bd-install-caddy
+/usr/local/lib/bob-deploy/bin/bd-app-setup
+/usr/local/lib/bob-deploy/bin/bd-caddy-site
+/usr/local/lib/bob-deploy/bin/bd-service
+/usr/local/lib/bob-deploy/bin/bd-read-log
+/usr/local/lib/bob-deploy/bin/bd-read-journal
+/usr/local/lib/bob-deploy/bin/bd-security-upgrade
+/usr/local/lib/bob-deploy/bin/bd-clean-disk
+/usr/local/lib/bob-deploy/bin/bd-reboot

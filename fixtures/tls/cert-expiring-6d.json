@@ -1,0 +1,6 @@
+{
+  "valid_to": "Oct  1 12:00:00 2026 GMT",
+  "valid_from": "Jul  3 12:00:00 2026 GMT",
+  "subject": { "CN": "app.example.test" },
+  "issuer": { "C": "US", "O": "Let's Encrypt", "CN": "R13" }
+}

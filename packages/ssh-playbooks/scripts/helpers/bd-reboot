@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# bd-reboot
+# Schedules a reboot one minute in the future (rather than rebooting immediately), so this BD_RESULT
+# line can be flushed back over the still-open SSH session before the connection drops. The caller
+# is expected to poll the server (a new SSH connection) until it comes back up.
+#
+# Usage: bd-reboot
+# On success: BD_RESULT {"ok":true,"scheduledFor":"+1 minute"}
+# On failure: BD_RESULT {"ok":false,"error":"<code>","message":"..."}
+#
+# @@LIB@@
+
+require_root
+
+shutdown -r +1 "Bob Deploy: scheduled reboot" >/dev/null 2>&1 \
+  || die "Failed to schedule a reboot." "BD_REBOOT_FAILED"
+
+result scheduledFor "+1 minute"

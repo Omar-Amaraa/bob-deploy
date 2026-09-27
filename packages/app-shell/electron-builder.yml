@@ -1,0 +1,27 @@
+appId: com.bobdeploy.app
+productName: Bob Deploy
+directories:
+  output: release
+  buildResources: build
+icon: build/icon.svg
+files:
+  - dist/**
+  - package.json
+asar: true
+asarUnpack:
+  - '**/better-sqlite3/**'
+  - '**/hash-wasm/**/*.wasm'
+npmRebuild: true
+nativeRebuilder: sequential
+win:
+  target: nsis
+mac:
+  target: dmg
+  hardenedRuntime: true
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+linux:
+  target:
+    - AppImage
+    - deb
+  category: Development

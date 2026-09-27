@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# bd-install-runtime <runtime> <version>
+# Installs (or verifies) a language runtime used to run a vibe-coded app: "node" or "python".
+# Idempotent: if the requested major version is already satisfied, does nothing.
+#
+# Usage: bd-install-runtime <node|python> <version>
+#   version - a major.minor version string, e.g. "20" or "20.11" for node, "3.11" for python.
+#
+# On success: BD_RESULT {"ok":true,"runtime":"<runtime>","version":"<resolved version>"}
+# On failure: BD_RESULT {"ok":false,"error":"<code>","message":"..."}
+#
+# @@LIB@@
+
+require_root
+export DEBIAN_FRONTEND=noninteractive
+
+RUNTIME="${1:-}"
+VERSION="${2:-}"
+
+if [ -z "$RUNTIME" ] || [ -z "$VERSION" ]; then
+  die "Usage: bd-install-runtime <node|python> <version>" "BD_BAD_ARGS"
+fi
+if ! [[ "$VERSION" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]]; then
+  die "Invalid version string: ${VERSION}" "BD_BAD_ARGS"
+fi
+
+MAJOR="${VERSION%%.*}"
+
+case "$RUNTIME" in
+  node)
+    if command -v node >/dev/null 2>&1; then
+      CURRENT_MAJOR="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo "")"
+      if [ "$CURRENT_MAJOR" = "$MAJOR" ]; then
+        result runtime node version "$(node -v)"
+      fi
+    fi
+    apt_run update -q || true
+    if ! command -v curl >/dev/null 2>&1; then
+      apt_install curl ca-certificates gnupg \
+        || die "Failed to install curl/ca-certificates: $(apt_tail)" "BD_APT_INSTALL_FAILED"
+    fi
+    curl -fsSL "https://deb.nodesource.com/setup_${MAJOR}.x" -o /tmp/bd-nodesource-setup.sh \
+      || die "Failed to fetch the NodeSource setup script for Node ${MAJOR}." "BD_DOWNLOAD_FAILED"
+    bash /tmp/bd-nodesource-setup.sh >/dev/null 2>&1 \
+      || die "NodeSource setup script failed for Node ${MAJOR}." "BD_INSTALL_FAILED"
+    rm -f /tmp/bd-nodesource-setup.sh
+    apt_install nodejs \
+      || die "Failed to install nodejs ${MAJOR} via apt: $(apt_tail)" "BD_APT_INSTALL_FAILED"
+    command -v node >/dev/null 2>&1 || die "node was not found after installation." "BD_INSTALL_FAILED"
+    result runtime node version "$(node -v)"
+    ;;
+  python)
+    if command -v "python${MAJOR}" >/dev/null 2>&1 || command -v "python${VERSION}" >/dev/null 2>&1; then
+      BIN="$(command -v "python${VERSION}" || command -v "python${MAJOR}")"
+      # Ubuntu/Debian ship python3 without venv/ensurepip (split into python3.X-venv), and every
+      # python release creates a .venv: without this the first release fails "ensurepip is not
+      # available" on a fresh server.
+      if ! "$BIN" -c 'import ensurepip, venv' >/dev/null 2>&1; then
+        PY_MINOR="$("$BIN" -c 'import sys; print("%d.%d" % sys.version_info[:2])')"
+        apt_run update -q || true
+        apt_install "python${PY_MINOR}-venv" \
+          || apt_install python3-venv \
+          || die "Failed to install python${PY_MINOR}-venv (needed for the app's virtual environment): $(apt_tail)" "BD_APT_INSTALL_FAILED"
+      fi
+      result runtime python version "$("$BIN" --version 2>&1 | awk '{print $2}')"
+    fi
+    apt_run update -q || true
+    apt_install "python${VERSION}" "python${VERSION}-venv" python3-pip \
+      || die "Failed to install python${VERSION} via apt (it may not be packaged for this Ubuntu release): $(apt_tail)" "BD_APT_INSTALL_FAILED"
+    BIN="$(command -v "python${VERSION}" || true)"
+    [ -n "$BIN" ] || die "python${VERSION} was not found after installation." "BD_INSTALL_FAILED"
+    result runtime python version "$("$BIN" --version 2>&1 | awk '{print $2}')"
+    ;;
+  *)
+    die "Unsupported runtime: ${RUNTIME}. Supported: node, python." "BD_BAD_ARGS"
+    ;;
+esac

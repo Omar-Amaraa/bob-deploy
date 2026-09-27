@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# bd-install-apt-packages <packages_b64>
+# Installs a small, fixed set of system apt packages that a Bob install plan asked for (e.g. native
+# build dependencies for a Python wheel). Every package name is re-validated here against this
+# script's own fixed allowlist (kept in sync with @bob-deploy/ssh-playbooks's
+# APT_PACKAGE_ALLOWLIST — see src/release/apt-allowlist.ts) as defense in depth: the TypeScript
+# side already filters Bob's suggestions before calling this, but this script never trusts that and
+# would refuse to install anything outside the list even if called directly.
+#
+# Usage: bd-install-apt-packages <packages_b64>
+#   packages_b64 - base64 of a newline-separated list of package names (may be empty -> no-op)
+#
+# On success: BD_RESULT {"ok":true,"installed":"<space-separated package names, or empty>"}
+# On failure: BD_RESULT {"ok":false,"error":"<code>","message":"..."}
+#
+# @@LIB@@
+
+require_root
+export DEBIAN_FRONTEND=noninteractive
+
+# Keep in sync with APT_PACKAGE_ALLOWLIST in src/release/apt-allowlist.ts.
+ALLOWED_PACKAGES=(
+  build-essential
+  libssl-dev
+  libffi-dev
+  zlib1g-dev
+  libjpeg-dev
+  libpq-dev
+  libxml2-dev
+  libxslt1-dev
+  pkg-config
+  python3-dev
+)
+
+PACKAGES_B64="${1:-}"
+
+if [ -z "$PACKAGES_B64" ]; then
+  result installed ""
+fi
+
+DECODED="$(printf '%s' "$PACKAGES_B64" | base64 -d 2>/dev/null || true)"
+
+PACKAGES=()
+while IFS= read -r line; do
+  [ -n "$line" ] && PACKAGES+=("$line")
+done <<<"$DECODED"
+
+if [ "${#PACKAGES[@]}" -eq 0 ]; then
+  result installed ""
+fi
+
+for pkg in "${PACKAGES[@]}"; do
+  allowed="false"
+  for candidate in "${ALLOWED_PACKAGES[@]}"; do
+    if [ "$pkg" = "$candidate" ]; then
+      allowed="true"
+      break
+    fi
+  done
+  if [ "$allowed" != "true" ]; then
+    die "Package not on the fixed allowlist: ${pkg}" "BD_APT_PACKAGE_NOT_ALLOWED"
+  fi
+done
+
+apt_run update -q || true
+# shellcheck disable=SC2068
+apt_install ${PACKAGES[@]} \
+  || die "apt-get install failed for: ${PACKAGES[*]}: $(apt_tail)" "BD_APT_INSTALL_FAILED"
+
+result installed "${PACKAGES[*]}"

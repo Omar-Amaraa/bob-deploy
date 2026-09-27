@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+# bd-caddy-site <app> <domain> <target> [tls_mode]
+# Writes (or replaces) the Caddy site block for <domain>, then reloads Caddy. <target> is either a
+# local port number (the app's proxy target: `reverse_proxy 127.0.0.1:<port>`) or the literal
+# string "static" (serves files straight from the app's current release directory, no proxy).
+#
+# tls_mode is "auto" (default) or "internal":
+#   auto     - Caddy provisions a publicly-trusted cert automatically (Let's Encrypt), for a real,
+#              publicly resolvable domain (including a sslip.io fallback domain).
+#   internal - Caddy issues from its own internal CA instead of ACME (see the `tls internal`
+#              directive). Used only in BOB_DEPLOY_TESTBED mode (DEC-020), where the "domain" is a
+#              *.bd.test name with no public DNS record and no ACME challenge could ever succeed.
+#
+# Usage: bd-caddy-site <app> <domain> <port|static> [auto|internal]
+# On success: BD_RESULT {"ok":true,"app":"<app>","domain":"<domain>","tlsMode":"<tls_mode>"}
+# On failure: BD_RESULT {"ok":false,"error":"<code>","message":"..."}
+#
+# @@LIB@@
+
+require_root
+
+APP="${1:-}"
+DOMAIN="${2:-}"
+TARGET="${3:-}"
+TLS_MODE="${4:-auto}"
+
+if [ -z "$APP" ] || [ -z "$DOMAIN" ] || [ -z "$TARGET" ]; then
+  die "Usage: bd-caddy-site <app> <domain> <port|static> [auto|internal]" "BD_BAD_ARGS"
+fi
+if ! validate_app "$APP"; then
+  die "Invalid app slug: ${APP}" "BD_INVALID_APP"
+fi
+if ! validate_domain "$DOMAIN"; then
+  die "Invalid domain: ${DOMAIN}" "BD_INVALID_DOMAIN"
+fi
+IS_STATIC="false"
+if [ "$TARGET" = "static" ]; then
+  IS_STATIC="true"
+elif ! validate_port "$TARGET"; then
+  die "Third argument must be a valid port or the literal 'static', got: ${TARGET}" "BD_INVALID_PORT"
+fi
+case "$TLS_MODE" in
+  auto | internal) ;;
+  *) die "tls_mode must be 'auto' or 'internal', got: ${TLS_MODE}" "BD_BAD_ARGS" ;;
+esac
+if ! command -v caddy >/dev/null 2>&1; then
+  die "caddy is not installed; run bd-install-caddy first." "BD_CADDY_NOT_INSTALLED"
+fi
+
+TLS_DIRECTIVE=""
+if [ "$TLS_MODE" = "internal" ]; then
+  TLS_DIRECTIVE=$'\n\ttls internal'
+fi
+
+mkdir -p /etc/caddy/sites.d
+SITE_FILE="/etc/caddy/sites.d/${APP}.caddy"
+
+# Caddy runs as the "caddy" user: it cannot write into /var/log/bob-deploy (root:<admin> 0750), so
+# its access log lives in its own log directory (created by the caddy package; ensured here).
+mkdir -p /var/log/caddy
+chown caddy:caddy /var/log/caddy 2>/dev/null || true
+# Create the access log as caddy *before* `caddy validate` below: validate runs as root and (Caddy
+# 2.10) opens the log file, creating it root:root 0600, after which the caddy service cannot open it
+# and refuses to start ("open /var/log/caddy/...: permission denied").
+SITE_LOG="/var/log/caddy/bob-deploy-${APP}.log"
+touch "$SITE_LOG"
+chown caddy:caddy "$SITE_LOG" 2>/dev/null || true
+chmod 0640 "$SITE_LOG"
+
+# A static site is served straight from /srv/bob-deploy/apps/<app>/current, which is
+# <admin>:bd-<app> 2750 (bd-app-setup): caddy must be in the bd-<app> group to read it, otherwise
+# every request is a 403. Group membership only applies to a new process, so restart (not reload).
+NEEDS_RESTART="false"
+if [ "$IS_STATIC" = "true" ]; then
+  APP_GROUP="bd-${APP}"
+  if ! getent group "$APP_GROUP" >/dev/null 2>&1; then
+    die "Group ${APP_GROUP} does not exist; run bd-app-setup first." "BD_APP_NOT_FOUND"
+  fi
+  if ! id -nG caddy 2>/dev/null | tr ' ' '\n' | grep -qx "$APP_GROUP"; then
+    usermod -aG "$APP_GROUP" caddy || die "Failed to give caddy read access to ${APP_GROUP}." "BD_USERADD_FAILED"
+    NEEDS_RESTART="true"
+  fi
+fi
+if [ "$IS_STATIC" = "true" ]; then
+  APP_DIR="/srv/bob-deploy/apps/${APP}"
+  cat >"$SITE_FILE" <<EOF
+# Managed by Bob Deploy (bd-caddy-site). App: ${APP} (static).
+${DOMAIN} {
+	root * ${APP_DIR}/current
+	file_server
+	encode gzip${TLS_DIRECTIVE}
+	log {
+		output file ${SITE_LOG}
+	}
+}
+EOF
+else
+  cat >"$SITE_FILE" <<EOF
+# Managed by Bob Deploy (bd-caddy-site). App: ${APP}.
+${DOMAIN} {
+	reverse_proxy 127.0.0.1:${TARGET}
+	encode gzip${TLS_DIRECTIVE}
+	log {
+		output file ${SITE_LOG}
+	}
+}
+EOF
+fi
+chmod 0644 "$SITE_FILE"
+
+if ! caddy validate --config /etc/caddy/Caddyfile >/dev/null 2>&1; then
+  rm -f "$SITE_FILE"
+  die "New Caddy site config failed validation." "BD_CADDY_CONFIG_INVALID"
+fi
+
+if [ "$NEEDS_RESTART" = "true" ]; then
+  systemctl restart caddy 2>/dev/null \
+    || die "Failed to restart caddy after writing the site config." "BD_SERVICE_RELOAD_FAILED"
+else
+  systemctl reload caddy 2>/dev/null || systemctl restart caddy 2>/dev/null \
+    || die "Failed to reload caddy after writing the site config." "BD_SERVICE_RELOAD_FAILED"
+fi
+
+result app "$APP" domain "$DOMAIN" tlsMode "$TLS_MODE"

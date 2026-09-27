@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# bd-install-caddy
+# Installs Caddy (the reverse proxy / TLS terminator Bob Deploy sites run behind) from its
+# official apt repository, idempotently, and ensures the service is enabled.
+#
+# Usage: bd-install-caddy
+# On success: BD_RESULT {"ok":true,"version":"<caddy version>"}
+# On failure: BD_RESULT {"ok":false,"error":"<code>","message":"..."}
+#
+# @@LIB@@
+
+require_root
+export DEBIAN_FRONTEND=noninteractive
+
+if command -v caddy >/dev/null 2>&1; then
+  mkdir -p /etc/caddy/sites.d
+  if [ ! -f /etc/caddy/Caddyfile ]; then
+    printf 'import /etc/caddy/sites.d/*.caddy\n' >/etc/caddy/Caddyfile
+  elif ! grep -q 'sites.d' /etc/caddy/Caddyfile 2>/dev/null; then
+    # Caddy was already installed (e.g. Ubuntu's own package, which ships a ":80" Caddyfile).
+    # Without this import every site bd-caddy-site writes is silently ignored. Append rather than
+    # overwrite, so an existing configuration on the server is kept.
+    printf '\n# Added by Bob Deploy (bd-install-caddy).\nimport /etc/caddy/sites.d/*.caddy\n' >>/etc/caddy/Caddyfile
+  fi
+  systemctl enable caddy >/dev/null 2>&1 || true
+  if systemctl is-active --quiet caddy; then
+    systemctl reload caddy >/dev/null 2>&1 || systemctl restart caddy >/dev/null 2>&1 || true
+  else
+    systemctl start caddy >/dev/null 2>&1 || true
+  fi
+  result version "$(caddy version 2>/dev/null | awk '{print $1}')"
+fi
+
+apt_run update -q || true
+apt_install debian-keyring debian-archive-keyring apt-transport-https curl gnupg \
+  || die "Failed to install prerequisites for the Caddy apt repository: $(apt_tail)" "BD_APT_INSTALL_FAILED"
+
+curl -fsSL 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
+  | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg 2>/dev/null \
+  || die "Failed to fetch or import the Caddy apt signing key." "BD_DOWNLOAD_FAILED"
+
+curl -fsSL 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' \
+  >/etc/apt/sources.list.d/caddy-stable.list 2>/dev/null \
+  || die "Failed to fetch the Caddy apt source list." "BD_DOWNLOAD_FAILED"
+
+apt_run update -q || die "apt-get update failed after adding the Caddy repository: $(apt_tail)" "BD_APT_UPDATE_FAILED"
+apt_install caddy || die "Failed to install caddy: $(apt_tail)" "BD_APT_INSTALL_FAILED"
+
+mkdir -p /etc/caddy/sites.d
+if [ ! -f /etc/caddy/Caddyfile ] || ! grep -q 'sites.d' /etc/caddy/Caddyfile 2>/dev/null; then
+  printf 'import /etc/caddy/sites.d/*.caddy\n' >/etc/caddy/Caddyfile
+fi
+
+systemctl enable caddy >/dev/null 2>&1 || true
+systemctl restart caddy >/dev/null 2>&1 || die "Failed to start caddy after installation." "BD_SERVICE_START_FAILED"
+
+command -v caddy >/dev/null 2>&1 || die "caddy was not found after installation." "BD_INSTALL_FAILED"
+result version "$(caddy version 2>/dev/null | awk '{print $1}')"

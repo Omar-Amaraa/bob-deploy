@@ -1,0 +1,2 @@
+bd-demo@web.service loaded active running Bob Deploy demo web process
+bd-demo@worker.service loaded active running Bob Deploy demo worker

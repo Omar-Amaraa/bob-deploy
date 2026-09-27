@@ -1,0 +1,56 @@
+services:
+  ubuntu2404:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        UBUNTU: "24.04"
+        ROOT_PASSWORD: ${BD_TESTBED_ROOT_PASSWORD:-Testbed-Root-Pw-7a91!}
+    image: bob-deploy-testbed:ubuntu2404
+    container_name: bob-deploy-testbed-ubuntu2404
+    hostname: ubuntu2404
+    privileged: true
+    cgroup: host
+    tmpfs:
+      - /run
+      - /run/lock
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    ports:
+      - "2222:22"
+      - "8080:80"
+      - "8443:443"
+    healthcheck:
+      test: ["CMD", "bash", "-c", "</dev/tcp/127.0.0.1/22"]
+      interval: 2s
+      timeout: 2s
+      retries: 60
+      start_period: 20s
+
+  ubuntu2204:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        UBUNTU: "22.04"
+        ROOT_PASSWORD: ${BD_TESTBED_ROOT_PASSWORD:-Testbed-Root-Pw-7a91!}
+    image: bob-deploy-testbed:ubuntu2204
+    container_name: bob-deploy-testbed-ubuntu2204
+    hostname: ubuntu2204
+    privileged: true
+    cgroup: host
+    tmpfs:
+      - /run
+      - /run/lock
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    ports:
+      - "2223:22"
+      - "8081:80"
+      - "8444:443"
+    healthcheck:
+      test: ["CMD", "bash", "-c", "</dev/tcp/127.0.0.1/22"]
+      interval: 2s
+      timeout: 2s
+      retries: 60
+      start_period: 20s

@@ -1,0 +1,22 @@
+node_modules/
+dist/
+*.tsbuildinfo
+artifacts/
+.env*
+testbed/.state/
+
+# vitest coverage output (packages/monitors and others)
+coverage/
+
+# local only
+AGENTS.md
+CLAUDE.md
+CODEOWNERS
+docs/
+bob-sample.jsonl
+.github/
+testbed/README.md
+packages/providers/README.md
+fixtures/README.md
+fixtures/hosts/README.md
+packages/ssh-playbooks/scripts/testing/README.md

@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src"
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/**/*.test.ts", "src/**/*.int.test.ts", "src/**/*.fail.test.ts"],
+  "references": [
+    { "path": "../contracts/tsconfig.json" },
+    { "path": "../agent/tsconfig.json" },
+    { "path": "../ssh-playbooks/tsconfig.json" }
+  ]
+}
